@@ -1,0 +1,55 @@
+{
+  "info": {
+    "name": "Stock Analysis Backend (bigJOD)",
+    "_postman_id": "b62c1de7-6fcb-4c7a-9b17-70b7f869c2ff",
+    "description": "Local API collection for the stock analysis backend.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "ticker", "value": "AAPL" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+    },
+    {
+      "name": "Stock Search",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/stock/search?q=AAPL",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "stock", "search"],
+          "query": [{ "key": "q", "value": "AAPL" }]
+        }
+      }
+    },
+    {
+      "name": "Live Quote",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/stock/{{ticker}}/quote" }
+    },
+    {
+      "name": "News",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/stock/{{ticker}}/news?limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "stock", "{{ticker}}", "news"],
+          "query": [{ "key": "limit", "value": "20" }]
+        }
+      }
+    },
+    {
+      "name": "Price History",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/stock/{{ticker}}/price-history" }
+    },
+    {
+      "name": "Full Analysis (Groq)",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/stock/{{ticker}}/analysis" }
+    }
+  ]
+}
+
