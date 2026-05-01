@@ -13,6 +13,12 @@ const AnalysisSchema = new mongoose.Schema(
 );
 
 AnalysisSchema.index({ ticker: 1, createdAt: -1 });
+// Screener query indexes
+AnalysisSchema.index({ "result.overallScore": -1 });
+AnalysisSchema.index({ "result.analystRating": 1 });
+AnalysisSchema.index({ "rawInput.sector": 1 });
+AnalysisSchema.index({ "rawInput.exchange": 1 });
+AnalysisSchema.index({ "result.overallScore": -1, "result.analystRating": 1, createdAt: -1 });
 
 export type AnalysisDoc = InferSchemaType<typeof AnalysisSchema>;
 export const AnalysisModel = mongoose.model("Analysis", AnalysisSchema);
