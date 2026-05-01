@@ -1,6 +1,5 @@
-import { z } from "zod";
-import { http } from "./httpClient";
 import { AppError } from "../utils/AppError";
+import { yf } from "./yahooFinance";
 
 export type CompanyProfile = {
   companyName: string;
@@ -9,59 +8,33 @@ export type CompanyProfile = {
   exchange: string;
 };
 
-function ensureFinnhubKey(): string {
-  const key = process.env.FINNHUB_KEY;
-  if (!key) throw new AppError("Missing Finnhub API key", { statusCode: 500, code: "MISSING_FINNHUB_KEY" });
-  return key;
-}
-
-const profileSchema = z.object({
-  name: z.string().optional(),
-  finnhubIndustry: z.string().optional(),
-  exchange: z.string().optional(),
-});
-
-const fmpProfileSchema = z.array(
-  z.object({
-    companyName: z.string().optional(),
-    sector: z.string().optional(),
-    industry: z.string().optional(),
-    exchangeShortName: z.string().optional(),
-  }),
-);
-
-function ensureFmpKey(): string {
-  const key = process.env.FMP_KEY;
-  if (!key) throw new AppError("Missing FMP API key", { statusCode: 500, code: "MISSING_FMP_KEY" });
-  return key;
-}
-
 export async function fetchCompanyProfile(ticker: string): Promise<CompanyProfile> {
-  const token = ensureFinnhubKey();
-  const apikey = ensureFmpKey();
+  try {
+    const summary = await yf.quoteSummary(ticker, {
+      modules: ["summaryProfile", "quoteType", "price"]
+    });
 
-  const [fhRes, fmpRes] = await Promise.allSettled([
-    http.get("https://finnhub.io/api/v1/stock/profile2", { params: { symbol: ticker, token } }),
-    http.get("https://financialmodelingprep.com/stable/profile", { params: { symbol: ticker, apikey } }),
-  ]);
+    const sp = (summary.summaryProfile || {}) as any;
+    const qt = (summary.quoteType || {}) as any;
+    const p = (summary.price || {}) as any;
 
-  const fh =
-    fhRes.status === "fulfilled" ? profileSchema.safeParse(fhRes.value.data) : { success: false as const, error: null };
-  const fmp =
-    fmpRes.status === "fulfilled"
-      ? fmpProfileSchema.safeParse(fmpRes.value.data)
-      : { success: false as const, error: null };
+    const companyName = p.longName || p.shortName || qt.longName || qt.shortName || ticker;
+    const sector = sp.sector || "Unknown";
+    const industry = sp.industry || "Unknown";
+    const exchange = qt.exchange || p.exchangeName || "Unknown";
 
-  const companyName = (fmp.success ? fmp.data[0]?.companyName : undefined) ?? (fh.success ? fh.data.name : undefined) ?? ticker;
-  const sector = (fmp.success ? fmp.data[0]?.sector : undefined) ?? "Unknown";
-  const industry = (fmp.success ? fmp.data[0]?.industry : undefined) ?? (fh.success ? fh.data.finnhubIndustry : undefined) ?? "Unknown";
-  const exchange = (fmp.success ? fmp.data[0]?.exchangeShortName : undefined) ?? (fh.success ? fh.data.exchange : undefined) ?? "Unknown";
-
-  return {
-    companyName,
-    sector,
-    industry,
-    exchange,
-  };
+    return {
+      companyName,
+      sector,
+      industry,
+      exchange,
+    };
+  } catch (err: unknown) {
+    const e = err as Error;
+    throw new AppError("Yahoo Finance profile request failed", {
+      statusCode: 502,
+      code: "YF_REQUEST_FAILED",
+      details: { ticker, message: e.message ?? String(err) },
+    });
+  }
 }
-

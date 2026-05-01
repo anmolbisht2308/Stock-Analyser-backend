@@ -1,6 +1,5 @@
-import { z } from "zod";
-import { http } from "./httpClient";
 import { AppError } from "../utils/AppError";
+import { yf } from "./yahooFinance";
 
 export type OHLCVBar = {
   date: string; // YYYY-MM-DD
@@ -11,72 +10,51 @@ export type OHLCVBar = {
   volume: number;
 };
 
-const alphaTimeSeriesSchema = z.object({
-  "Time Series (Daily)": z.record(
-    z.object({
-      "1. open": z.string(),
-      "2. high": z.string(),
-      "3. low": z.string(),
-      "4. close": z.string(),
-      "6. volume": z.string().optional(),
-      "5. volume": z.string().optional(),
-    }),
-  ),
-  "Error Message": z.string().optional(),
-  Note: z.string().optional(),
-});
-
-function ensureAlphaKey(): string {
-  const key = process.env.ALPHA_VANTAGE_KEY;
-  if (!key) throw new AppError("Missing Alpha Vantage API key", { statusCode: 500, code: "MISSING_ALPHA_VANTAGE_KEY" });
-  return key;
-}
-
 export async function fetchDailyOHLCV(ticker: string): Promise<OHLCVBar[]> {
-  const apikey = ensureAlphaKey();
-  const url = "https://www.alphavantage.co/query";
+  try {
+    const today = new Date();
+    const from = new Date();
+    // Fetch last 120 days to comfortably have >=60 trading days (accounting for weekends/holidays)
+    from.setDate(today.getDate() - 120);
 
-  const { data } = await http.get(url, {
-    params: {
-      function: "TIME_SERIES_DAILY",
-      symbol: ticker,
-      outputsize: "compact",
-      apikey,
-    },
-  });
+    const chart = await yf.chart(ticker, {
+      period1: from,
+      period2: today,
+      interval: "1d",
+    });
 
-  const parsed = alphaTimeSeriesSchema.safeParse(data);
-  if (!parsed.success) {
-    throw new AppError("Alpha Vantage parse error", { statusCode: 502, code: "ALPHA_VANTAGE_BAD_RESPONSE", details: parsed.error.flatten() });
+    const bars: OHLCVBar[] = chart.quotes
+      .filter((q) => q.date && q.open !== null && q.high !== null && q.low !== null && q.close !== null)
+      .map((q) => {
+        const date = q.date as Date;
+        return {
+          date: date.toISOString().slice(0, 10),
+          open: Number(q.open),
+          high: Number(q.high),
+          low: Number(q.low),
+          close: Number(q.close),
+          volume: Number(q.volume ?? 0),
+        };
+      })
+      .filter((b) => Number.isFinite(b.close) && Number.isFinite(b.volume))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    if (bars.length < 60) {
+      throw new AppError("Insufficient OHLCV history", {
+        statusCode: 502,
+        code: "INSUFFICIENT_OHLCV",
+        details: { ticker, points: bars.length },
+      });
+    }
+
+    return bars;
+  } catch (err: unknown) {
+    if (err instanceof AppError) throw err;
+    const e = err as Error;
+    throw new AppError("Yahoo Finance chart request failed", {
+      statusCode: 502,
+      code: "YF_REQUEST_FAILED",
+      details: { ticker, message: e.message ?? String(err) },
+    });
   }
-
-  if (parsed.data["Error Message"]) {
-    throw new AppError("Alpha Vantage error", { statusCode: 502, code: "ALPHA_VANTAGE_ERROR", details: parsed.data["Error Message"] });
-  }
-  if (parsed.data.Note) {
-    throw new AppError("Alpha Vantage rate limited", { statusCode: 429, code: "ALPHA_VANTAGE_RATE_LIMIT", details: parsed.data.Note });
-  }
-
-  const series = parsed.data["Time Series (Daily)"];
-  const bars: OHLCVBar[] = Object.entries(series)
-    .map(([date, v]) => {
-      const vol = v["6. volume"] ?? v["5. volume"] ?? "0";
-      return {
-        date,
-        open: Number(v["1. open"]),
-        high: Number(v["2. high"]),
-        low: Number(v["3. low"]),
-        close: Number(v["4. close"]),
-        volume: Number(vol),
-      };
-    })
-    .filter((b) => Number.isFinite(b.close) && Number.isFinite(b.volume))
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
-
-  if (bars.length < 60) {
-    throw new AppError("Insufficient OHLCV history", { statusCode: 502, code: "INSUFFICIENT_OHLCV", details: { ticker, points: bars.length } });
-  }
-
-  return bars;
 }
-

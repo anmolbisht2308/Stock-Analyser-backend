@@ -1,6 +1,5 @@
-import { z } from "zod";
-import { http } from "./httpClient";
 import { AppError } from "../utils/AppError";
+import { yf } from "./yahooFinance";
 
 export type Quote = {
   currentPrice: number;
@@ -8,28 +7,21 @@ export type Quote = {
   changePercent: number;
 };
 
-function ensureFinnhubKey(): string {
-  const key = process.env.FINNHUB_KEY;
-  if (!key) throw new AppError("Missing Finnhub API key", { statusCode: 500, code: "MISSING_FINNHUB_KEY" });
-  return key;
-}
-
-const quoteSchema = z.object({
-  c: z.number(),
-  d: z.number(),
-  dp: z.number(),
-});
-
 export async function fetchQuote(ticker: string): Promise<Quote> {
-  const token = ensureFinnhubKey();
-  const { data } = await http.get("https://finnhub.io/api/v1/quote", {
-    params: { symbol: ticker, token },
-  });
-
-  const parsed = quoteSchema.safeParse(data);
-  if (!parsed.success) {
-    throw new AppError("Finnhub quote parse error", { statusCode: 502, code: "FINNHUB_BAD_RESPONSE", details: parsed.error.flatten() });
+  try {
+    const data = await yf.quote(ticker);
+    
+    return { 
+      currentPrice: data.regularMarketPrice ?? 0, 
+      change: data.regularMarketChange ?? 0, 
+      changePercent: data.regularMarketChangePercent ?? 0 
+    };
+  } catch (err: unknown) {
+    const e = err as Error;
+    throw new AppError("Yahoo Finance quote request failed", {
+      statusCode: 502,
+      code: "YF_REQUEST_FAILED",
+      details: { ticker, message: e.message ?? String(err) },
+    });
   }
-  return { currentPrice: parsed.data.c, change: parsed.data.d, changePercent: parsed.data.dp };
 }
-
