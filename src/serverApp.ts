@@ -5,6 +5,7 @@ import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { logger } from "./lib/logger";
 import { errorHandler } from "./middleware/error.middleware";
+import { apiLogger } from "./middleware/apiLogger.middleware";
 import stockRoutes from "./routes/stock.routes";
 import trendingRoutes from "./routes/trending.routes";
 import screenerRoutes from "./routes/screener.routes";
@@ -15,6 +16,7 @@ const app = express();
 
 app.set("trust proxy", 1);
 
+app.use(apiLogger);
 app.use(helmet());
 app.use(
   cors({

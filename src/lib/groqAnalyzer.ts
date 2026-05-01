@@ -2,6 +2,7 @@ import client from "./groq";
 import { z } from "zod";
 import { logger } from "./logger";
 import { AppError } from "../utils/AppError";
+import { TokenUsageLogModel } from "../models/TokenUsageLog.model";
 
 export const analysisInputSchema = z.object({
   ticker: z.string().min(1),
@@ -305,6 +306,22 @@ Return the complete GroqAnalysisResult JSON now:`;
       max_tokens: 4000,
       response_format: { type: "json_object" },
     });
+    
+    // Log token usage asynchronously
+    if (response.usage) {
+      TokenUsageLogModel.create({
+        service: "Groq",
+        model: response.model,
+        promptTokens: response.usage.prompt_tokens,
+        completionTokens: response.usage.completion_tokens,
+        totalTokens: response.usage.total_tokens,
+        environment: process.env.NODE_ENV || "development",
+        timestamp: new Date(),
+      }).catch((err) => {
+        logger.error("Failed to log token usage to database", { err });
+      });
+    }
+
     return response.choices[0]?.message?.content ?? "{}";
   };
 
