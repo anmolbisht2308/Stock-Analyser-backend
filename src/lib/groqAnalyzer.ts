@@ -124,6 +124,20 @@ function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], 
   return found ?? fallback;
 }
 
+function normalizeArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined) return [];
+  return [value];
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  return normalizeArray(value).map(String).filter(s => s.trim().length > 0);
+}
+
+function normalizeNumberArray(value: unknown): number[] {
+  return normalizeArray(value).map(Number).filter(n => !Number.isNaN(n));
+}
+
 function normalizeResultShape(rawObj: unknown): unknown {
   if (!rawObj || typeof rawObj !== "object") return rawObj;
   const obj: any = rawObj;
@@ -204,7 +218,24 @@ function normalizeResultShape(rawObj: unknown): unknown {
       "FAIR",
     );
     obj.fundamentalSummary.fundamentalScore = clamp01to100(obj.fundamentalSummary.fundamentalScore);
+    obj.fundamentalSummary.keyStrengths = normalizeStringArray(obj.fundamentalSummary.keyStrengths);
+    obj.fundamentalSummary.keyRisks = normalizeStringArray(obj.fundamentalSummary.keyRisks);
   }
+
+  if (obj?.newsSentiment) {
+    obj.newsSentiment.catalysts = normalizeStringArray(obj.newsSentiment.catalysts);
+    obj.newsSentiment.risks = normalizeStringArray(obj.newsSentiment.risks);
+  }
+
+  if (obj?.technicalSummary) {
+    obj.technicalSummary.supportLevels = normalizeNumberArray(obj.technicalSummary.supportLevels);
+    obj.technicalSummary.resistanceLevels = normalizeNumberArray(obj.technicalSummary.resistanceLevels);
+    obj.technicalSummary.keyPatterns = normalizeStringArray(obj.technicalSummary.keyPatterns);
+  }
+
+  obj.catalystsForGrowth = normalizeStringArray(obj.catalystsForGrowth);
+  obj.majorRisks = normalizeStringArray(obj.majorRisks);
+  obj.comparablePeers = normalizeStringArray(obj.comparablePeers);
 
   return obj;
 }
