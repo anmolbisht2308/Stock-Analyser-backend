@@ -144,18 +144,29 @@ function normalizeResultShape(rawObj: unknown): unknown {
     obj.multibaggerProbability.within2Years = clamp01to100(obj.multibaggerProbability.within2Years);
     obj.multibaggerProbability.within3Years = clamp01to100(obj.multibaggerProbability.within3Years);
     obj.multibaggerProbability.confidence = normalizeEnum(obj.multibaggerProbability.confidence, ["LOW", "MEDIUM", "HIGH"] as const, "LOW");
+    obj.multibaggerProbability.reasoning = obj.multibaggerProbability.reasoning || "No reasoning provided by analysis model.";
   }
 
-  if (obj?.targetProbabilities) {
-    for (const k of ["twoX", "threeX", "fourX"] as const) {
-      const block = obj.targetProbabilities?.[k];
-      if (block) {
-        block.within1Y = clamp01to100(block.within1Y);
-        block.within2Y = clamp01to100(block.within2Y);
-        block.within3Y = clamp01to100(block.within3Y);
-      }
-    }
+  if (!obj?.targetProbabilities) {
+    obj.targetProbabilities = {};
   }
+  for (const k of ["twoX", "threeX", "fourX"] as const) {
+    if (!obj.targetProbabilities[k]) {
+      obj.targetProbabilities[k] = { within1Y: 0, within2Y: 0, within3Y: 0 };
+    }
+    const block = obj.targetProbabilities[k];
+    block.within1Y = clamp01to100(block.within1Y);
+    block.within2Y = clamp01to100(block.within2Y);
+    block.within3Y = clamp01to100(block.within3Y);
+  }
+
+  if (!obj?.targetPrices) {
+    obj.targetPrices = {};
+  }
+  obj.targetPrices.conservative = Number(obj.targetPrices.conservative) || 0;
+  obj.targetPrices.base = Number(obj.targetPrices.base) || 0;
+  obj.targetPrices.optimistic = Number(obj.targetPrices.optimistic) || 0;
+  obj.targetPrices.timeHorizon = obj.targetPrices.timeHorizon || "1-3 years";
 
   if (obj?.newsSentiment) {
     obj.newsSentiment.overall = normalizeEnum(
@@ -163,6 +174,7 @@ function normalizeResultShape(rawObj: unknown): unknown {
       ["VERY POSITIVE", "POSITIVE", "NEUTRAL", "NEGATIVE", "VERY NEGATIVE"] as const,
       "NEUTRAL",
     );
+    obj.newsSentiment.sentimentScore = clamp01to100(obj.newsSentiment.sentimentScore);
   }
 
   if (obj?.technicalSummary) {
@@ -172,6 +184,7 @@ function normalizeResultShape(rawObj: unknown): unknown {
       "SIDEWAYS",
     );
     obj.technicalSummary.momentum = normalizeEnum(obj.technicalSummary.momentum, ["BULLISH", "NEUTRAL", "BEARISH"] as const, "NEUTRAL");
+    obj.technicalSummary.technicalScore = clamp01to100(obj.technicalSummary.technicalScore);
   }
 
   if (obj?.fundamentalSummary) {
@@ -190,6 +203,7 @@ function normalizeResultShape(rawObj: unknown): unknown {
       ["EXCELLENT", "GOOD", "FAIR", "POOR"] as const,
       "FAIR",
     );
+    obj.fundamentalSummary.fundamentalScore = clamp01to100(obj.fundamentalSummary.fundamentalScore);
   }
 
   return obj;
@@ -212,7 +226,7 @@ function buildCompactPriceContext(input: AnalysisInput): {
     volumes.length >= 20 ? volumes.slice(-20).reduce((a, b) => a + b, 0) / 20 : volumes.reduce((a, b) => a + b, 0) / Math.max(1, volumes.length);
 
   return {
-    priceHistorySample: input.priceHistory.slice(-30),
+    priceHistorySample: input.priceHistory.slice(-10),
     priceSummary: {
       lastClose,
       high90: hi90,
@@ -264,22 +278,22 @@ Exchange: ${input.exchange}
 Current Price: $${input.currentPrice}
 
 TECHNICAL INDICATORS (computed locally, authoritative):
-${JSON.stringify(input.technicals, null, 2)}
+${JSON.stringify(input.technicals)}
 
 PRICE SUMMARY (derived from last 120 trading days):
-${JSON.stringify(priceSummary, null, 2)}
+${JSON.stringify(priceSummary)}
 
-PRICE HISTORY SAMPLE (last 30 trading days: date, close, volume):
-${JSON.stringify(priceHistorySample, null, 2)}
+PRICE HISTORY SAMPLE (last 10 trading days: date, close, volume):
+${JSON.stringify(priceHistorySample)}
 
 FUNDAMENTAL DATA:
-${JSON.stringify(input.fundamentals, null, 2)}
+${JSON.stringify(input.fundamentals)}
 
-RECENT NEWS (last 5 articles):
-${JSON.stringify(input.recentNews.slice(0, 5), null, 2)}
+RECENT NEWS (last 3 articles):
+${JSON.stringify(input.recentNews.slice(0, 3))}
 
 ANALYST RATINGS FROM FIRMS:
-${JSON.stringify(input.analystRatings, null, 2)}
+${JSON.stringify(input.analystRatings)}
 
 INSTRUCTIONS:
 1. overallScore (0-100) combines technical (40%), fundamental (40%), sentiment (20%)
@@ -287,15 +301,16 @@ INSTRUCTIONS:
 3. Realistic multibagger probability (stocks rarely 5x in 1 year)
 4. Target probabilities must be consistent (4x harder than 2x, longer time = higher prob)
 5. technicalSummary.signals must list ALL 17 indicators with fields: {name, value (string), interpretation}
-6. investmentThesis must be 150-200 words
+6. Keep ALL text fields (investmentThesis, reasoning) CONCISE: Max 50 words.
 7. Support/resistance must be actual price numbers derived from price history
-8. Return ONLY the JSON object, no other text
+8. Arrays (keyStrengths, majorRisks, etc.) max 3 items each.
+9. Return ONLY the JSON object, no other text
 
 ${enumRules}
 
 Return the complete GroqAnalysisResult JSON now:`;
 
-  const create = async (prefer: "primary" | "fallback", prompt: string): Promise<string> => {
+  const create = async (prefer: "primary" | "fallback", purpose: string, prompt: string, notes: string = ""): Promise<string> => {
     const response = await client.chat.completions.create({
       model: pickGroqModel(prefer),
       messages: [
@@ -312,6 +327,9 @@ Return the complete GroqAnalysisResult JSON now:`;
       TokenUsageLogModel.create({
         service: "Groq",
         model: response.model,
+        purpose,
+        ticker: input.ticker,
+        notes,
         promptTokens: response.usage.prompt_tokens,
         completionTokens: response.usage.completion_tokens,
         totalTokens: response.usage.total_tokens,
@@ -331,7 +349,7 @@ Return the complete GroqAnalysisResult JSON now:`;
   };
 
   try {
-    const raw1 = await create("primary", userPrompt);
+    const raw1 = await create("primary", "initial_analysis", userPrompt);
     try {
       return tryParse(raw1);
     } catch (zerr: unknown) {
@@ -352,7 +370,7 @@ ${raw1}
 Validation issues:
 ${JSON.stringify(issues)}
 `;
-      const rawRepair = await create("primary", repairPrompt);
+      const rawRepair = await create("primary", "repair_validation_primary", repairPrompt, String(zerr));
       return tryParse(rawRepair);
     }
   } catch (err1: unknown) {
@@ -379,7 +397,7 @@ ${JSON.stringify(priceSummary)}
 ${enumRules}`;
 
     try {
-      const raw2 = await create("fallback", ultraPrompt);
+      const raw2 = await create("fallback", "fallback_analysis", ultraPrompt, String(err1));
       // One more repair attempt on fallback output
       try {
         return tryParse(raw2);
@@ -398,7 +416,7 @@ ${raw2}
 Validation issues:
 ${JSON.stringify(issues2)}
 `;
-        const raw2b = await create("fallback", repairPrompt2);
+        const raw2b = await create("fallback", "repair_validation_fallback", repairPrompt2, String(zerr2));
         return tryParse(raw2b);
       }
     } catch (err2: unknown) {
