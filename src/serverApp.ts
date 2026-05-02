@@ -11,6 +11,7 @@ import trendingRoutes from "./routes/trending.routes";
 import screenerRoutes from "./routes/screener.routes";
 import authRoutes from "./routes/auth.routes";
 import watchlistRoutes from "./routes/watchlist.routes";
+import paymentRoutes from "./routes/payment.routes";
 
 const app = express();
 
@@ -24,6 +25,20 @@ app.use(
     credentials: true,
   }),
 );
+
+// ── Webhook route — raw body required for Razorpay HMAC verification ───────
+// Must be registered BEFORE express.json() to capture raw body
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }), (req, _res, next) => {
+  // Attach raw buffer to request so the webhook handler can verify signature
+  (req as any).rawBody = req.body;
+  // Parse JSON manually so the controller can read req.body as object
+  try {
+    req.body = JSON.parse(req.body.toString());
+  } catch { /* leave as buffer */ }
+  next();
+});
+
+// ── Standard body parsers ─────────────────────────────────────────────────
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
@@ -51,6 +66,7 @@ app.use("/api/trending", trendingRoutes);
 app.use("/api/screener", screenerRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/watchlist", watchlistRoutes);
+app.use("/api/payments", paymentRoutes);
 
 app.use(errorHandler);
 
