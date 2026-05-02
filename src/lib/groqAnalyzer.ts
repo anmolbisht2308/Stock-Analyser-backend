@@ -67,8 +67,8 @@ export const groqAnalysisResultSchema = z.object({
   technicalSummary: z.object({
     trend: z.enum(["STRONG UPTREND", "UPTREND", "SIDEWAYS", "DOWNTREND", "STRONG DOWNTREND"]),
     momentum: z.enum(["BULLISH", "NEUTRAL", "BEARISH"]),
-    supportLevels: z.array(z.number().positive()),
-    resistanceLevels: z.array(z.number().positive()),
+    supportLevels: z.array(z.number().nonnegative()),
+    resistanceLevels: z.array(z.number().nonnegative()),
     keyPatterns: z.array(z.string()),
     technicalScore: z.number().min(0).max(100),
     signals: z.array(
@@ -113,9 +113,34 @@ function pickGroqModel(prefer: "primary" | "fallback"): string {
 }
 
 function clamp01to100(n: unknown): number {
-  const x = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(x)) return 0;
-  return Math.max(0, Math.min(100, x));
+  let x = n;
+  if (typeof x === "string") {
+    x = x.replace(/%/g, "").trim();
+    x = Number(x);
+  }
+  if (typeof x !== "number" || Number.isNaN(x) || !Number.isFinite(x)) return 0;
+  
+  // If the LLM returned a decimal like 0.73 instead of 73
+  if (x > 0 && x <= 1 && !Number.isInteger(x)) {
+    x = x * 100;
+  }
+  
+  return Math.round(Math.max(0, Math.min(100, x as number)));
+}
+
+function clampMinus100to100(n: unknown): number {
+  let x = n;
+  if (typeof x === "string") {
+    x = x.replace(/%/g, "").trim();
+    x = Number(x);
+  }
+  if (typeof x !== "number" || Number.isNaN(x) || !Number.isFinite(x)) return 0;
+  
+  if (x > -1 && x < 1 && x !== 0 && !Number.isInteger(x)) {
+    x = x * 100;
+  }
+  
+  return Math.round(Math.max(-100, Math.min(100, x as number)));
 }
 
 function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -138,11 +163,21 @@ function normalizeNumberArray(value: unknown): number[] {
   return normalizeArray(value).map(Number).filter(n => !Number.isNaN(n));
 }
 
+function parseMoney(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const num = Number(value.replace(/[^0-9.-]+/g, ""));
+    return Number.isNaN(num) ? 0 : num;
+  }
+  return 0;
+}
+
 function normalizeResultShape(rawObj: unknown): unknown {
   if (!rawObj || typeof rawObj !== "object") return rawObj;
   const obj: any = rawObj;
 
   obj.analystRating = normalizeEnum(obj.analystRating, ["STRONG BUY", "BUY", "HOLD", "SELL", "STRONG SELL"] as const, "HOLD");
+  obj.overallScore = clamp01to100(obj.overallScore);
 
   if (Array.isArray(obj?.technicalSummary?.signals)) {
     obj.technicalSummary.signals = obj.technicalSummary.signals.map((s: any) => {
@@ -165,21 +200,33 @@ function normalizeResultShape(rawObj: unknown): unknown {
     obj.targetProbabilities = {};
   }
   for (const k of ["twoX", "threeX", "fourX"] as const) {
-    if (!obj.targetProbabilities[k]) {
-      obj.targetProbabilities[k] = { within1Y: 0, within2Y: 0, within3Y: 0 };
+    const fallbackKey = k === "twoX" ? "2x" : k === "threeX" ? "3x" : "4x";
+    
+    // Attempt to find the object under standard or fallback key
+    let block = obj.targetProbabilities[k] || obj.targetProbabilities[fallbackKey];
+    
+    if (!block || typeof block !== "object") {
+      block = { within1Y: 0, within2Y: 0, within3Y: 0 };
     }
-    const block = obj.targetProbabilities[k];
-    block.within1Y = clamp01to100(block.within1Y);
-    block.within2Y = clamp01to100(block.within2Y);
-    block.within3Y = clamp01to100(block.within3Y);
+    
+    // Also handle possible LLM key variations like "1Y", "1y", "within1Year"
+    const w1y = block.within1Y ?? block["1Y"] ?? block["1y"] ?? block.within1Year ?? 0;
+    const w2y = block.within2Y ?? block["2Y"] ?? block["2y"] ?? block.within2Years ?? 0;
+    const w3y = block.within3Y ?? block["3Y"] ?? block["3y"] ?? block.within3Years ?? 0;
+
+    obj.targetProbabilities[k] = {
+      within1Y: clamp01to100(w1y),
+      within2Y: clamp01to100(w2y),
+      within3Y: clamp01to100(w3y),
+    };
   }
 
   if (!obj?.targetPrices) {
     obj.targetPrices = {};
   }
-  obj.targetPrices.conservative = Number(obj.targetPrices.conservative) || 0;
-  obj.targetPrices.base = Number(obj.targetPrices.base) || 0;
-  obj.targetPrices.optimistic = Number(obj.targetPrices.optimistic) || 0;
+  obj.targetPrices.conservative = parseMoney(obj.targetPrices.conservative);
+  obj.targetPrices.base = parseMoney(obj.targetPrices.base);
+  obj.targetPrices.optimistic = parseMoney(obj.targetPrices.optimistic);
   obj.targetPrices.timeHorizon = obj.targetPrices.timeHorizon || "1-3 years";
 
   if (obj?.newsSentiment) {
@@ -188,7 +235,7 @@ function normalizeResultShape(rawObj: unknown): unknown {
       ["VERY POSITIVE", "POSITIVE", "NEUTRAL", "NEGATIVE", "VERY NEGATIVE"] as const,
       "NEUTRAL",
     );
-    obj.newsSentiment.sentimentScore = clamp01to100(obj.newsSentiment.sentimentScore);
+    obj.newsSentiment.sentimentScore = clampMinus100to100(obj.newsSentiment.sentimentScore);
   }
 
   if (obj?.technicalSummary) {
@@ -296,10 +343,53 @@ Be realistic: not every stock is a multibagger. Score conservatively and accurat
   const requiredTopLevelKeys =
     `"overallScore","analystRating","ratingReason","multibaggerProbability","targetProbabilities","targetPrices","technicalSummary","fundamentalSummary","newsSentiment","investmentThesis","catalystsForGrowth","majorRisks","comparablePeers","suggestedTimeHorizon","entryStrategy","exitStrategy"`;
 
+const schemaStructure = `
+{
+  "overallScore": <integer 0-100>,
+  "analystRating": <enum>,
+  "ratingReason": <string max 50 words>,
+  "multibaggerProbability": {
+    "within1Year": <integer 0-100>, "within2Years": <integer 0-100>, "within3Years": <integer 0-100>,
+    "confidence": <enum>, "reasoning": <string max 50 words>
+  },
+  "targetProbabilities": {
+    "twoX": { "within1Y": <integer 0-100>, "within2Y": <integer 0-100>, "within3Y": <integer 0-100> },
+    "threeX": { "within1Y": <integer 0-100>, "within2Y": <integer 0-100>, "within3Y": <integer 0-100> },
+    "fourX": { "within1Y": <integer 0-100>, "within2Y": <integer 0-100>, "within3Y": <integer 0-100> }
+  },
+  "targetPrices": {
+    "conservative": <number>, "base": <number>, "optimistic": <number>, "timeHorizon": <string>
+  },
+  "technicalSummary": {
+    "trend": <enum>, "momentum": <enum>, "supportLevels": [<number>, ...], "resistanceLevels": [<number>, ...],
+    "keyPatterns": [<string>, ...], "technicalScore": <integer 0-100>,
+    "signals": [ { "name": <string>, "value": <string>, "interpretation": <enum> }, ... ]
+  },
+  "fundamentalSummary": {
+    "valuationStatus": <enum>, "growthOutlook": <enum>, "financialHealth": <enum>,
+    "fundamentalScore": <integer 0-100>, "keyStrengths": [<string>, ...], "keyRisks": [<string>, ...]
+  },
+  "newsSentiment": {
+    "overall": <enum>, "sentimentScore": <integer -100 to 100>,
+    "catalysts": [<string>, ...], "risks": [<string>, ...]
+  },
+  "investmentThesis": <string max 50 words>,
+  "catalystsForGrowth": [<string>, ...],
+  "majorRisks": [<string>, ...],
+  "comparablePeers": [<string>, ...],
+  "suggestedTimeHorizon": <string>,
+  "entryStrategy": <string>,
+  "exitStrategy": <string>
+}
+`;
+
   const userPrompt = `Return ONE JSON object matching the GroqAnalysisResult interface EXACTLY.
 No markdown. No extra keys. Do not omit any required fields.
 Top-level keys MUST be exactly: ${requiredTopLevelKeys}
 Do NOT wrap inside another object.
+
+EXPECTED JSON STRUCTURE:
+${schemaStructure}
 
 STOCK DATA:
 Ticker: ${input.ticker}
@@ -327,10 +417,10 @@ ANALYST RATINGS FROM FIRMS:
 ${JSON.stringify(input.analystRatings)}
 
 INSTRUCTIONS:
-1. overallScore (0-100) combines technical (40%), fundamental (40%), sentiment (20%)
+1. overallScore (INTEGER 0-100) combines technical (40%), fundamental (40%), sentiment (20%)
 2. Determine analystRating based on all signals combined
-3. Realistic multibagger probability (stocks rarely 5x in 1 year)
-4. Target probabilities must be consistent (4x harder than 2x, longer time = higher prob)
+3. Realistic multibagger probability (INTEGER 0-100). Use EXACT keys: "within1Year", "within2Years", "within3Years"
+4. Target probabilities must be INTEGERS 0-100. Use EXACT keys: "twoX", "threeX", "fourX". Inside them, use EXACT keys: "within1Y", "within2Y", "within3Y".
 5. technicalSummary.signals must list ALL 17 indicators with fields: {name, value (string), interpretation}
 6. Keep ALL text fields (investmentThesis, reasoning) CONCISE: Max 50 words.
 7. Support/resistance must be actual price numbers derived from price history
@@ -375,8 +465,13 @@ Return the complete GroqAnalysisResult JSON now:`;
   };
 
   const tryParse = (raw: string): GroqAnalysisResult => {
-    const normalized = normalizeResultShape(JSON.parse(raw));
-    return groqAnalysisResultSchema.parse(normalized);
+    try {
+      const normalized = normalizeResultShape(JSON.parse(raw));
+      return groqAnalysisResultSchema.parse(normalized);
+    } catch (e: any) {
+      console.error("[Groq] tryParse failed!", e?.issues || e?.message || e);
+      throw e;
+    }
   };
 
   try {
@@ -410,6 +505,9 @@ ${JSON.stringify(issues)}
 No markdown. No extra keys. Do not omit fields.
 Top-level keys MUST be exactly: ${requiredTopLevelKeys}
 Do NOT wrap inside another object.
+
+EXPECTED JSON STRUCTURE:
+${schemaStructure}
 
 Ticker: ${input.ticker}
 Company: ${input.companyName}
