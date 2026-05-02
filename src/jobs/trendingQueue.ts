@@ -22,9 +22,19 @@ export type TrendingTicker = {
 };
 
 async function fetchTrendingTickers(): Promise<TrendingTicker[]> {
-  // Get top 20 trending symbols for India
-  const trending = await yf.trendingSymbols(MARKET, { count: 20 });
-  const symbols = trending.quotes.map((q) => q.symbol).filter(Boolean);
+  let symbols: string[] = [];
+  try {
+    // Get top 20 trending symbols for India
+    const trending = await yf.trendingSymbols(MARKET, { count: 20 });
+    symbols = trending.quotes.map((q) => q.symbol).filter(Boolean);
+  } catch (err) {
+    logger.warn(`Yahoo trending API failed for ${MARKET}, using fallback tickers`, { err });
+    // Yahoo's trending endpoint for IN breaks frequently. Fallback to top Nifty50.
+    symbols = [
+      "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "TCS.NS", 
+      "ITC.NS", "LART.NS", "SBIN.NS", "BHARTIARTL.NS", "BAJFINANCE.NS"
+    ];
+  }
 
   if (symbols.length === 0) return [];
 
