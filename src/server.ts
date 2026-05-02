@@ -22,6 +22,7 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err: unknown) => {
+  console.error("Fatal bootstrap error:", err); // Added console.error for Render logs
   logger.error("Fatal bootstrap error", { err });
   process.exit(1);
 });
