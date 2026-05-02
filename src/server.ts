@@ -12,7 +12,7 @@ async function bootstrap(): Promise<void> {
   await connectMongo();
   await connectRedis();
 
-  // Start BullMQ background workers (after Redis + Mongo are ready)
+  // Start BullMQ background workers (after Redis + Mongodb are ready)
   startTrendingWorker();
 
   const server = http.createServer(app);
