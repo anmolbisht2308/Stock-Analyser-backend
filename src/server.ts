@@ -12,8 +12,8 @@ async function bootstrap(): Promise<void> {
   await connectMongo();
   await connectRedis();
 
-  // Start BullMQ background workers (after Redis + Mongodb are ready)
-  startTrendingWorker();
+  // BullMQ workers disabled as requested
+  // startTrendingWorker();
 
   const server = http.createServer(app);
   server.listen(port, () => {
