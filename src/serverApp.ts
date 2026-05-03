@@ -12,6 +12,7 @@ import screenerRoutes from "./routes/screener.routes";
 import authRoutes from "./routes/auth.routes";
 import watchlistRoutes from "./routes/watchlist.routes";
 import paymentRoutes from "./routes/payment.routes";
+import profileRoutes from "./routes/profile.routes";
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use("/api/stock", stockRoutes);
 app.use("/api/trending", trendingRoutes);
 app.use("/api/screener", screenerRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
 app.use("/api/watchlist", watchlistRoutes);
 app.use("/api/payments", paymentRoutes);
 
