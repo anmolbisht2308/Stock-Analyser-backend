@@ -1,5 +1,15 @@
 import "dotenv/config";
 import http from "node:http";
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("UNHANDLED REJECTION:", reason);
+  process.exit(1);
+});
 import app from "./serverApp";
 import { connectMongo } from "./lib/mongoose";
 import { connectRedis } from "./lib/redis";
