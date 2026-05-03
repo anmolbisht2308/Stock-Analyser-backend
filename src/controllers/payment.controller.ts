@@ -10,14 +10,14 @@ import { logger } from "../lib/logger";
 // Public: returns plan metadata for the pricing page
 export const getPlans = asyncHandler(async (_req: Request, res: Response) => {
   const plans = Object.values(PLAN_CONFIGS).map((p) => ({
-    id:           p.id,
-    label:        p.label,
-    description:  p.description,
-    monthly:      p.monthly,
-    annual:       p.annual,
-    dailyLimit:   p.dailyLimit,
+    id: p.id,
+    label: p.label,
+    description: p.description,
+    monthly: p.monthly,
+    annual: p.annual,
+    dailyLimit: p.dailyLimit,
     watchlistMax: p.watchlistMax,
-    features:     p.features,
+    features: p.features,
   }));
   res.json({ plans, keyId: process.env.RAZORPAY_KEY_ID });
 });
@@ -37,10 +37,10 @@ export const getMyPlan = asyncHandler(async (req: Request, res: Response) => {
   const effectivePlan = isExpired ? "free" : user.plan;
 
   res.json({
-    plan:                effectivePlan,
-    planExpiresAt:       user.planExpiresAt,
-    isExpired:           !!isExpired,
-    analysisCountToday:  user.analysisCountToday ?? 0,
+    plan: effectivePlan,
+    planExpiresAt: user.planExpiresAt,
+    isExpired: !!isExpired,
+    analysisCountToday: user.analysisCountToday ?? 0,
     analysisCountResetAt: user.analysisCountResetAt,
   });
 });
@@ -57,42 +57,62 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError("billingCycle must be 'monthly' or 'annual'", { statusCode: 400, code: "INVALID_BILLING_CYCLE" });
   }
 
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  logger.debug(`createOrder: plan=${plan} billingCycle=${billingCycle} keyId=${keyId ? "SET" : "MISSING"} keySecret=${keySecret ? "SET" : "MISSING"}`);
+
+  if (!keyId || !keySecret) {
+    throw new AppError("Payment gateway not configured", { statusCode: 503, code: "PAYMENT_GATEWAY_UNAVAILABLE" });
+  }
+
   const planConfig = PLAN_CONFIGS[plan];
-  const amount     = planConfig[billingCycle].amount; // in paise
+  const amount = planConfig[billingCycle].amount; // in paise
 
   // Create Razorpay order
-  const order = await razorpay.orders.create({
-    amount,
-    currency: "INR",
-    receipt: `rcpt_${req.userId}_${Date.now()}`,
-    notes: {
-      userId:       String(req.userId),
+  try {
+    const order = await razorpay.orders.create({
+      amount,
+      currency: "INR",
+      receipt: `rcpt_${String(req.userId).slice(-8)}${Date.now().toString().slice(-6)}`,
+      notes: {
+        userId: String(req.userId),
+        plan,
+        billingCycle,
+      },
+    });
+
+    // Persist pending payment record
+    await PaymentModel.create({
+      userId: req.userId,
+      razorpayOrderId: order.id,
       plan,
       billingCycle,
-    },
-  });
+      amount,
+      currency: "INR",
+      status: "created",
+      metadata: { receipt: order.receipt },
+    });
 
-  // Persist pending payment record
-  await PaymentModel.create({
-    userId:         req.userId,
-    razorpayOrderId: order.id,
-    plan,
-    billingCycle,
-    amount,
-    currency: "INR",
-    status: "created",
-    metadata: { receipt: order.receipt },
-  });
+    logger.debug(`createOrder success: orderId=${order.id} userId=${req.userId}`);
 
-  res.status(201).json({
-    orderId:      order.id,
-    amount,
-    currency:     "INR",
-    keyId:        process.env.RAZORPAY_KEY_ID,
-    plan,
-    billingCycle,
-    planLabel:    planConfig[billingCycle].label,
-  });
+    res.status(201).json({
+      orderId: order.id,
+      amount,
+      currency: "INR",
+      keyId: process.env.RAZORPAY_KEY_ID,
+      plan,
+      billingCycle,
+      planLabel: planConfig[billingCycle].label,
+    });
+  } catch (error: any) {
+    const razorpayError = error.error?.description || error.message || "Unknown Razorpay error";
+    const statusCode = error.statusCode ?? error.error?.code ?? 500;
+    logger.error(`createOrder Razorpay error: ${razorpayError} | statusCode=${statusCode} | raw=${JSON.stringify(error.error ?? {})}`);
+    throw new AppError(
+      `Failed to create payment: ${razorpayError}`,
+      { statusCode: typeof statusCode === "number" ? statusCode : 500, code: "RAZORPAY_ORDER_FAILED" },
+    );
+  }
 });
 
 // ── POST /api/payments/verify ───────────────────────────────────────────────
@@ -100,9 +120,9 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 // Verifies HMAC signature and upgrades user plan
 export const verifyPayment = asyncHandler(async (req: Request, res: Response) => {
   const {
-    razorpay_order_id:   orderId,
+    razorpay_order_id: orderId,
     razorpay_payment_id: paymentId,
-    razorpay_signature:  signature,
+    razorpay_signature: signature,
   } = req.body as Record<string, string>;
 
   if (!orderId || !paymentId || !signature) {
@@ -138,7 +158,7 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   // 4. Upgrade user plan
   const planExpiry = new Date(now.getTime() + PLAN_DURATION_MS[payment.billingCycle as BillingCycle]);
   await UserModel.findByIdAndUpdate(req.userId, {
-    plan:         payment.plan,
+    plan: payment.plan,
     planExpiresAt: planExpiry,
   });
 
@@ -177,8 +197,8 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
 
   if (event.event === "payment.captured") {
     const paymentEntity = event.payload?.payment?.entity;
-    const orderId       = paymentEntity?.order_id as string;
-    const paymentId     = paymentEntity?.id as string;
+    const orderId = paymentEntity?.order_id as string;
+    const paymentId = paymentEntity?.id as string;
 
     if (!orderId) {
       res.status(200).json({ ok: true }); // acknowledge
@@ -191,7 +211,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
       return;
     }
 
-    const now        = new Date();
+    const now = new Date();
     const planExpiry = new Date(now.getTime() + PLAN_DURATION_MS[payment.billingCycle as BillingCycle]);
 
     await PaymentModel.findByIdAndUpdate(payment._id, {
@@ -201,7 +221,7 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
     });
 
     await UserModel.findByIdAndUpdate(payment.userId, {
-      plan:         payment.plan,
+      plan: payment.plan,
       planExpiresAt: planExpiry,
     });
 
