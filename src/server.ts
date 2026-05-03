@@ -3,6 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 
 fs.writeSync(2, "SERVER STARTING UP...\n");
+setInterval(() => fs.writeSync(2, "HEARTBEAT...\n"), 500);
 
 process.on("uncaughtException", (err) => {
   fs.writeSync(2, "UNCAUGHT EXCEPTION: " + String(err) + "\n" + (err?.stack || "") + "\n");
@@ -24,11 +25,21 @@ const port = Number(process.env.PORT ?? 5000);
 async function bootstrap(): Promise<void> {
   fs.writeSync(2, `BOOTSTRAP RUNNING. MONGODB_URI exists: ${!!process.env.MONGODB_URI}, REDIS_URL exists: ${!!process.env.REDIS_URL}\n`);
   
-  await connectMongo();
-  fs.writeSync(2, "Mongo connected successfully.\n");
+  try {
+    await connectMongo();
+    fs.writeSync(2, "Mongo connected successfully.\n");
+  } catch (e) {
+    fs.writeSync(2, "MONGO CONNECTION THREW AN ERROR: " + String(e) + "\n");
+    throw e;
+  }
   
-  await connectRedis();
-  fs.writeSync(2, "Redis connected successfully.\n");
+  try {
+    await connectRedis();
+    fs.writeSync(2, "Redis connected successfully.\n");
+  } catch (e) {
+    fs.writeSync(2, "REDIS CONNECTION THREW AN ERROR: " + String(e) + "\n");
+    throw e;
+  }
 
   const server = http.createServer(app);
   server.listen(port, "0.0.0.0", () => {
