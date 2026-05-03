@@ -1,3 +1,8 @@
 import YahooFinance from 'yahoo-finance2';
 
-export const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+YahooFinance.setGlobalConfig({
+  suppressNotices: ['yahooSurvey'],
+  queue: { concurrency: 1, timeout: 60000 },
+});
+
+export const yf = YahooFinance;
