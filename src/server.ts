@@ -2,13 +2,11 @@ import "dotenv/config";
 import http from "node:http";
 
 process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION:", err);
-  process.exit(1);
+  process.stderr.write("UNCAUGHT EXCEPTION: " + String(err) + "\n" + (err?.stack || "") + "\n");
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("UNHANDLED REJECTION:", reason);
-  process.exit(1);
+  process.stderr.write("UNHANDLED REJECTION: " + String(reason) + "\n");
 });
 import app from "./serverApp";
 import { connectMongo } from "./lib/mongoose";
@@ -32,7 +30,6 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err: unknown) => {
-  console.error("Fatal bootstrap error:", err); // Added console.error for Render logs
+  process.stderr.write("Fatal bootstrap error: " + String(err) + "\n");
   logger.error("Fatal bootstrap error", { err });
-  process.exit(1);
 });
