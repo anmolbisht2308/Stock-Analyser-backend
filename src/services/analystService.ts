@@ -5,9 +5,9 @@ export type AnalystRating = { firm: string; rating: string; targetPrice: number 
 
 export async function fetchAnalystRatings(ticker: string): Promise<AnalystRating[]> {
   try {
-    const summary = await yf.quoteSummary(ticker, {
+    const summary = (await yf.quoteSummary(ticker, {
       modules: ["financialData", "recommendationTrend"]
-    });
+    })) as any;
 
     const fd = (summary.financialData || {}) as any;
     const summaryRatings: AnalystRating[] = [];

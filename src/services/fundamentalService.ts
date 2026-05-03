@@ -30,9 +30,9 @@ function num(x: number | null | undefined, fallback = 0): number {
 
 export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
   try {
-    const summary = await yf.quoteSummary(ticker, {
+    const summary = (await yf.quoteSummary(ticker, {
       modules: ["financialData", "defaultKeyStatistics", "summaryDetail"]
-    });
+    })) as any;
 
     const fd = (summary.financialData || {}) as any;
     const dks = (summary.defaultKeyStatistics || {}) as any;

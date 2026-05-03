@@ -9,7 +9,7 @@ export type Quote = {
 
 export async function fetchQuote(ticker: string): Promise<Quote> {
   try {
-    const data = await yf.quote(ticker);
+    const data = (await yf.quote(ticker)) as any;
     
     return { 
       currentPrice: data.regularMarketPrice ?? 0, 

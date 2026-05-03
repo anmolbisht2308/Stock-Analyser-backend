@@ -23,9 +23,9 @@ export async function fetchDailyOHLCV(ticker: string): Promise<OHLCVBar[]> {
       interval: "1d",
     });
 
-    const bars: OHLCVBar[] = chart.quotes
-      .filter((q) => q.date && q.open !== null && q.high !== null && q.low !== null && q.close !== null)
-      .map((q) => {
+    const bars: OHLCVBar[] = (chart as any).quotes
+      .filter((q: any) => q.date && q.open !== null && q.high !== null && q.low !== null && q.close !== null)
+      .map((q: any) => {
         const date = q.date as Date;
         return {
           date: date.toISOString().slice(0, 10),
@@ -36,8 +36,8 @@ export async function fetchDailyOHLCV(ticker: string): Promise<OHLCVBar[]> {
           volume: Number(q.volume ?? 0),
         };
       })
-      .filter((b) => Number.isFinite(b.close) && Number.isFinite(b.volume))
-      .sort((a, b) => (a.date < b.date ? -1 : 1));
+      .filter((b: OHLCVBar) => Number.isFinite(b.close) && Number.isFinite(b.volume))
+      .sort((a: OHLCVBar, b: OHLCVBar) => (a.date < b.date ? -1 : 1));
 
     if (bars.length < 60) {
       throw new AppError("Insufficient OHLCV history", {

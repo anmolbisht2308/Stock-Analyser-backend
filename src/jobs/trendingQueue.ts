@@ -26,7 +26,7 @@ async function fetchTrendingTickers(): Promise<TrendingTicker[]> {
   try {
     // Get top 20 trending symbols for India
     const trending = await yf.trendingSymbols(MARKET, { count: 20 });
-    symbols = trending.quotes.map((q) => q.symbol).filter(Boolean);
+    symbols = (trending as any).quotes.map((q: any) => q.symbol).filter(Boolean);
   } catch (err) {
     logger.warn(`Yahoo trending API failed for ${MARKET}, using fallback tickers`, { err });
     // Yahoo's trending endpoint for IN breaks frequently. Fallback to top Nifty50.
@@ -44,7 +44,7 @@ async function fetchTrendingTickers(): Promise<TrendingTicker[]> {
   const tickers: TrendingTicker[] = [];
   for (const result of quotes) {
     if (result.status === "fulfilled") {
-      const q = (result as PromiseFulfilledResult<Awaited<ReturnType<typeof yf.quote>>>).value;
+      const q = (result as any).value as any;
       tickers.push({
         symbol: q.symbol ?? "",
         name: q.longName || q.shortName || q.symbol || "",

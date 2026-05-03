@@ -5,10 +5,10 @@ export type NewsItem = { headline: string; source: string; publishedAt: string; 
 
 export async function fetchCompanyNews(ticker: string, limit: number): Promise<NewsItem[]> {
   try {
-    const results = await yf.search(ticker, {
+    const results = (await yf.search(ticker, {
       newsCount: limit,
       quotesCount: 0,
-    });
+    })) as any;
 
     const dedup = new Map<string, NewsItem>();
     

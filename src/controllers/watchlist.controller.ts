@@ -17,7 +17,7 @@ export const getWatchlist = asyncHandler(async (req, res) => {
 
   const items = user.watchlist.map((w, i) => {
     const result = quoteResults[i];
-    const q = result?.status === "fulfilled" ? result.value : null;
+    const q = (result as any).status === "fulfilled" ? (result as any).value : null;
     return {
       symbol: w.symbol,
       addedAt: w.addedAt,

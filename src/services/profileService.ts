@@ -10,9 +10,9 @@ export type CompanyProfile = {
 
 export async function fetchCompanyProfile(ticker: string): Promise<CompanyProfile> {
   try {
-    const summary = await yf.quoteSummary(ticker, {
+    const summary = (await yf.quoteSummary(ticker, {
       modules: ["summaryProfile", "quoteType", "price"]
-    });
+    })) as any;
 
     const sp = (summary.summaryProfile || {}) as any;
     const qt = (summary.quoteType || {}) as any;

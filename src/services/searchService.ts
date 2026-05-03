@@ -13,9 +13,9 @@ export async function searchSymbols(q: string): Promise<SearchResult[]> {
   try {
     const results = await yf.search(query, { quotesCount: 20, newsCount: 0 });
     
-    return results.quotes
-      .filter((r) => r.symbol && (r.shortname || r.longname))
-      .map((r) => ({
+    return (results as any).quotes
+      .filter((r: any) => r.symbol && (r.shortname || r.longname))
+      .map((r: any) => ({
         symbol: String(r.symbol),
         description: String(r.longname || r.shortname || r.symbol),
         type: String(r.quoteType || "EQUITY"),
